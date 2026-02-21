@@ -56,4 +56,3 @@ All agent thoughts are traced in Langfuse.
 - `frontend/src/App.jsx`: React + Tailwind + WebSpeech API.
 
 ---
-*Built with ❤️ by Antigravity for Agentic Hackathon*
