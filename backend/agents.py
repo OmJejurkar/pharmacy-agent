@@ -26,9 +26,9 @@ class OrderExtractorAgent:
                 return []
         return self._medicine_names
 
-    def run(self, text: str):
+    def run(self, text: str, user_id: str = "GUEST"):
         # Langfuse trace
-        trace = langfuse_client.trace_interaction("OrderExtractor", text)
+        trace = langfuse_client.trace_interaction("OrderExtractor", text, user_id=user_id)
         
         # Ensure names are loaded (now that DB should be ready)
         if not self.medicine_names:
@@ -132,12 +132,14 @@ class OrderExtractorAgent:
         return result
 
 class SafetyCheckerAgent:
-    def run(self, order_data):
-        trace = langfuse_client.trace_interaction("SafetyChecker", order_data)
+    def run(self, order_data, user_id="GUEST"):
+        trace = langfuse_client.trace_interaction("SafetyChecker", order_data, user_id=user_id)
         
         mds = order_data.get("medicines", [])
         if not mds:
-            return {"approved": False, "reason": "No medicines found"}
+            result = {"approved": False, "reason": "No medicines found"}
+            if trace: trace.end()
+            return result
             
         conn = database.get_db_connection()
         
@@ -148,28 +150,58 @@ class SafetyCheckerAgent:
             row = conn.execute("SELECT * FROM medicines WHERE name = ?", (med_name,)).fetchone()
             if not row:
                 conn.close()
-                return {"approved": False, "reason": f"Medicine {med_name} not found"}
+                result = {"approved": False, "reason": f"Medicine {med_name} not found"}
+                if trace: trace.end()
+                return result
             
             # Stock Check
             if row['stock'] < qty:
                 conn.close()
-                return {"approved": False, "reason": f"Insufficient stock for {med_name}. Available: {row['stock']}"}
+                result = {"approved": False, "reason": f"Insufficient stock for {med_name}. Available: {row['stock']}"}
+                if trace: trace.end()
+                return result
             
             # Prescription Check
-            # "NEVER approve prescription_required=True without mock prescription"
-            # We assume logical "prescription" is missing if not field present (which it isn't in simple voice parsing)
+            # If prescription required:
             if row['prescription_required']:
-                 # Check if 'prescription_verified' flag exists in input (Phase 3 upload)
-                 if not order_data.get("prescription_verified", False):
-                     conn.close()
-                     return {"approved": False, "reason": f"Prescription required for {med_name}"}
+                # 1. Does the user already have an active approval?
+                is_approved = database.check_approved_prescription(user_id, med_name)
+                if is_approved:
+                    continue # Bypass check
+                    
+                # 2. If not approved, did they just upload one?
+                if order_data.get("prescription_verified", False):
+                    # Create pending approval
+                    database.create_prescription_approval(user_id, med_name, "mock_url_or_verified")
+                    conn.close()
+                    result = {
+                        "approved": False, 
+                        "reason": f"Your prescription for {med_name} is pending admin approval. We will notify you once reviewed.", 
+                        "status": "pending_admin"
+                    }
+                    if trace: trace.end()
+                    return result
+                else:
+                    # 3. Block firmly
+                    conn.close()
+                    result = {
+                        "approved": False, 
+                        "reason": f"Prescription required for {med_name}. Please upload your prescription.", 
+                        "status": "needs_prescription"
+                    }
+                    if trace: trace.end()
+                    return result
         
         conn.close()
-        return {"approved": True, "reason": "Safety checks passed", "medicines": mds}
+        result = {"approved": True, "reason": "Safety checks passed", "medicines": mds}
+        if trace:
+             trace.update(output=result)
+             trace.end()
+        return result
 
 class InventoryExecutorAgent:
     def run(self, approved_order, user_id="GUEST"):
-        trace = langfuse_client.trace_interaction("InventoryExecutor", approved_order)
+        trace = langfuse_client.trace_interaction("InventoryExecutor", approved_order, user_id=user_id)
         
         medicines = approved_order.get("medicines", [])
         total_price = 0
@@ -206,14 +238,21 @@ class InventoryExecutorAgent:
                 "total_price": total_price,
                 "items": dispatched_items
             }
+            if trace:
+                 trace.update(output=result)
+                 trace.end()
             return result
             
         except Exception as e:
-            return {"status": "failed", "error": str(e)}
+            result = {"status": "failed", "error": str(e)}
+            if trace:
+                 trace.update(output=result, level="ERROR", status_message=str(e))
+                 trace.end()
+            return result
 
 class ProactiveRefillAgent:
-    def run_scan(self):
-        trace = langfuse_client.trace_interaction("ProactiveRefill", {})
+    def run_scan(self, user_id="ADMIN"):
+        trace = langfuse_client.trace_interaction("ProactiveRefill", {}, user_id=user_id)
         
         conn = database.get_db_connection()
         customers = conn.execute("SELECT * FROM customers").fetchall()
@@ -269,6 +308,9 @@ class ProactiveRefillAgent:
                 })
         
         conn.close()
+        if trace:
+             trace.update(output=alerts)
+             trace.end()
         return alerts
 
 class ChitchatAgent:
