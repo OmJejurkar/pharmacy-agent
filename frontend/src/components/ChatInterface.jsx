@@ -70,11 +70,16 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
 
       const result = response.data;
       
+      let messageType = 'success';
+      if (result.status === 'rejected') messageType = 'error';
+      else if (result.status === 'pending_admin' || result.status === 'needs_prescription') messageType = 'warning';
+
       // Add agent response
       setMessages(prev => [...prev, { 
         role: 'assistant', 
         content: result.result,
-        type: result.status === 'rejected' ? 'error' : 'success',
+        type: messageType,
+        status: result.status,
         metadata: result.data
       }]);
 
@@ -136,7 +141,16 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
                 ? "bg-blue-600 text-white rounded-tr-none" 
                 : "bg-white border border-slate-200 text-slate-800 rounded-tl-none"
             )}>
-              <p>{msg.content}</p>
+              <p className="flex items-start gap-2">
+                {msg.type === 'warning' && <AlertCircle className="text-orange-500 mt-0.5 flex-shrink-0" size={18} />}
+                {msg.type === 'error' && <AlertCircle className="text-red-500 mt-0.5 flex-shrink-0" size={18} />}
+                <span className={cn(
+                    msg.type === 'warning' ? 'text-orange-800' : '',
+                    msg.type === 'error' ? 'text-red-800' : ''
+                )}>
+                    {msg.content}
+                </span>
+              </p>
               
               {/* Metadata / Order Details */}
               {msg.metadata && (msg.metadata.items || []).length > 0 && (
@@ -154,6 +168,24 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
                      Total: ₹{msg.metadata.total_price}
                    </div>
                 </div>
+              )}
+
+              {/* Confirmation Buttons */}
+              {msg.status === 'pending_confirmation' && idx === messages.length - 1 && (
+                  <div className="mt-3 flex gap-3">
+                      <button 
+                          onClick={() => handleSendMessage('Yes')}
+                          className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                          Yes
+                      </button>
+                      <button 
+                          onClick={() => handleSendMessage('No')}
+                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                          No
+                      </button>
+                  </div>
               )}
             </div>
           </div>
