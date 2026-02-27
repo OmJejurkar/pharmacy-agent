@@ -148,7 +148,7 @@ def agent_chat_process(request: ChatRequest):
         if not safety["approved"]:
              resp = f"Safety check failed: {safety['reason']}"
              database.save_chat_message(user_id, "assistant", resp)
-             return {"result": resp, "status": "rejected"}
+             return {"result": resp, "status": safety.get("status", "rejected")}
              
         execution = agents.executor.run(safety, user_id=user_id)
         if execution["status"] == "success":
@@ -190,7 +190,7 @@ def agent_chat_process(request: ChatRequest):
     if not safety_result["approved"]:
         resp = f"I cannot process this order. {safety_result['reason']}"
         database.save_chat_message(user_id, "assistant", resp)
-        return {"result": resp, "status": "rejected"}
+        return {"result": resp, "status": safety_result.get("status", "rejected")}
     
     # 3. CONFIRMATION PROMPT
     # Instead of executing, we ask for confirmation.

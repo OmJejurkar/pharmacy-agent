@@ -116,7 +116,7 @@ const AdminDashboard = () => {
                                             <tr key={app.id} className="hover:bg-slate-50/80 transition-colors group">
                                                 <td className="px-8 py-5">
                                                     <div className="font-bold text-slate-900">{app.user_id}</div>
-                                                    <div className="text-slate-500 font-mono text-xs mt-0.5">#{app.id.substring(0,8)}...</div>
+                                                    <div className="text-slate-500 font-mono text-xs mt-0.5">#{app.id}</div>
                                                 </td>
                                                 <td className="px-8 py-5">
                                                     <div className="inline-flex items-center px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 font-semibold border border-indigo-100">

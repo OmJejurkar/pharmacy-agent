@@ -169,7 +169,12 @@ def load_excel_data():
                     price = 0.0
                     
                 unit_type = "pack" # Default
-                prescription_required = False # Default
+                
+                # Apply heuristic to automatically flag common prescription drugs
+                rx_keywords = ['amox', 'mycin', 'azepam', 'pril', 'statin', 'cillin', 'floxacin', 'sartan', 'olol', 'odone']
+                name_lower = name.lower()
+                prescription_required = any(kw in name_lower for kw in rx_keywords)
+                
                 category = "General"
                 max_daily_dose = "Unknown"
                 description = str(row.get('descriptions', ''))
