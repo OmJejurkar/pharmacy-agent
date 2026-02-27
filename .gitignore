@@ -56,3 +56,7 @@ frontend/dist/
 
 #readme fiel 
 README.md
+
+# Local History and Temp files
+.lh/
+~$*.xlsx
