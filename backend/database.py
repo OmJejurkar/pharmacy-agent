@@ -312,38 +312,45 @@ def get_all_medicines():
 def get_dashboard_summary():
     conn = get_db_connection()
     c = conn.cursor()
+
+    # Total medicines
     c.execute("SELECT COUNT(*) FROM medicines")
     total_medicines = c.fetchone()[0]
 
+    # Low stock (below 50 units)
     c.execute("SELECT COUNT(*) FROM medicines WHERE stock < 50")
     low_stock_count = c.fetchone()[0]
 
+    # All-time total revenue
+    c.execute("SELECT COALESCE(SUM(total_price), 0) FROM orders")
+    total_revenue = c.fetchone()[0]
+
+    # Total orders placed
+    c.execute("SELECT COUNT(*) FROM orders")
+    total_orders = c.fetchone()[0]
+
+    # Current month profit (revenue × 40% margin as a practical estimate)
     c.execute("SELECT date(MAX(timestamp)) FROM orders")
     max_date = c.fetchone()[0]
-
     if max_date:
-        c.execute("SELECT SUM(total_price) FROM orders WHERE date(timestamp) = ?", (max_date,))
-        today_revenue = c.fetchone()[0] or 0.0
-
         current_month = max_date[:7]
-        q = '''
-            SELECT SUM(o.total_price - (m.unit_price * 0.6 * o.quantity))
-            FROM orders o
-            JOIN medicines m ON o.medicine = m.name
-            WHERE strftime('%Y-%m', o.timestamp) = ?
-        '''
-        c.execute(q, (current_month,))
-        monthly_profit = c.fetchone()[0] or 0.0
+        c.execute(
+            "SELECT COALESCE(SUM(total_price), 0) FROM orders WHERE strftime('%Y-%m', timestamp) = ?",
+            (current_month,)
+        )
+        monthly_revenue = c.fetchone()[0]
+        monthly_profit = monthly_revenue * 0.40  # 40% margin estimate
     else:
-        today_revenue = 0.0
         monthly_profit = 0.0
 
     conn.close()
     return {
         "total_medicines": total_medicines,
         "low_stock_count": low_stock_count,
-        "today_revenue": round(today_revenue, 2),
-        "monthly_profit": round(monthly_profit, 2)
+        "total_revenue": round(total_revenue, 2),
+        "today_revenue": round(total_revenue, 2),  # kept for backward compat
+        "monthly_profit": round(monthly_profit, 2),
+        "total_orders": total_orders,
     }
 
 def get_sales_analytics():
