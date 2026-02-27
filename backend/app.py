@@ -185,11 +185,20 @@ def agent_chat_process(request: ChatRequest):
         database.save_chat_message(user_id, "assistant", resp)
         return {"result": resp}
     
-    # 2. Add to Cart (instead of pending_confirmation)
+    # 2. Safety Check (Preliminary)
+    extraction["prescription_verified"] = False # No file uploaded directly in chat yet
+    safety_result = agents.safety.run(extraction, user_id=user_id)
+    
+    if not safety_result["approved"]:
+        resp = f"I cannot add this to your cart. {safety_result['reason']}"
+        database.save_chat_message(user_id, "assistant", resp)
+        return {"result": resp, "status": safety_result.get("status", "rejected")}
+    
+    # 3. Add to Cart
     conn = database.get_db_connection()
     added_names = []
     
-    for med in extraction["medicines"]:
+    for med in safety_result["medicines"]:
         name = med["name"]
         qty = med["qty"]
         # get price
