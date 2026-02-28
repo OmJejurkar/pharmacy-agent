@@ -160,33 +160,21 @@ def extract_prescription_file(file_bytes: bytes, mime_type: str = "image/jpeg") 
         
     prompt = f"""
     You are an intelligent pharmacy extraction engine.
-<<<<<<< HEAD
-    Your task is to parse a doctor's handwritten prescription or medical document and identify ALL medical items, dosages, and quantities.
-=======
     Your task is to parse a doctor's handwritten prescription image and identify ALL medical items, dosages, and quantities, AS WELL AS the prescribing doctor's name.
->>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
     
     CRITICAL INSTRUCTIONS:
     1. Read the document carefully to identify the medicine name and dosage (e.g. Paracetamol 500mg).
     2. Try your best to extract every medicine mentioned.
     3. You must map what you read to the closest exact match from our Current Inventory list below. 
     4. Handle plurals, typos, and bad handwriting gracefully.
-<<<<<<< HEAD
-    5. IDENTIFY THE PRESCRIBING DOCTOR. Look for names at the top or near signatures (e.g., "Dr. Smith", "Sarah Jenkins MD"). If no distinct doctor is found, return null.
-=======
-    5. Find the prescribing doctor's name (look for 'Dr.', signatures, headers).
->>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
+    5. Find the prescribing doctor's name (look for 'Dr.', signatures, headers). If no distinct doctor is found, return null.
     
     Current Inventory:
     {meds}
     
     Return ONLY a raw JSON object with the exact keys below:
     {{
-<<<<<<< HEAD
-        "doctor_name": "Extracted Doctor Name or null",
-=======
-        "doctor_name": "Full name of the doctor, or 'Not specified'",
->>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
+        "doctor_name": "Full name of the doctor, or null if not found",
         "medicines": [
             {{
                 "name": "Exact Name From Inventory String",
@@ -266,11 +254,7 @@ def extract_prescription_file(file_bytes: bytes, mime_type: str = "image/jpeg") 
         doc_name = extracted_data.get("doctor_name") or extracted_data.get("DoctorName") or extracted_data.get("Doctor_Name") or "Unknown Doctor"
         
         result = {
-<<<<<<< HEAD
-            "doctor_name": extracted_data.get("doctor_name", None),
-=======
             "doctor_name": doc_name,
->>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
             "medicines": extracted_data.get("medicines", []),
             "suggestions": extracted_data.get("suggestions", [])
         }
@@ -280,19 +264,13 @@ def extract_prescription_file(file_bytes: bytes, mime_type: str = "image/jpeg") 
         return result
         
     except Exception as e:
-<<<<<<< HEAD
         print(f"Groq Parsing Failed: {e}")
-        result = {"doctor_name": None, "medicines": [], "suggestions": [], "error": str(e)}
-=======
-        print(f"Image Extraction Failed: {e}")
-        # Always return a valid struct so backend doesn't crash on tuple unpacking
         result = {
             "doctor_name": "Unknown Doctor",
             "medicines": [],
             "suggestions": [],
             "error": str(e)
         }
->>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
 
     if trace:
         trace.update(output=result)
