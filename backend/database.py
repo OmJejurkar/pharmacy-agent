@@ -101,6 +101,8 @@ def init_db():
             medicine TEXT,
             prescription_url TEXT,
             status TEXT DEFAULT 'pending',
+            extracted_items TEXT,
+            doctor_name TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -121,6 +123,26 @@ def init_db():
     # Add column if it doesn't exist (for existing SQLite databases)
     try:
         c.execute("ALTER TABLE cart_items ADD COLUMN is_prescribed BOOLEAN DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+        
+    try:
+        c.execute("ALTER TABLE prescription_approvals ADD COLUMN extracted_items TEXT")
+    except sqlite3.OperationalError:
+        pass
+        
+    try:
+        c.execute("ALTER TABLE prescription_approvals ADD COLUMN doctor_name TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute("ALTER TABLE customers ADD COLUMN password TEXT")
+    except sqlite3.OperationalError:
+        pass
+        
+    try:
+        c.execute("ALTER TABLE customers ADD COLUMN auth_provider TEXT DEFAULT 'local'")
     except sqlite3.OperationalError:
         pass
 
@@ -570,14 +592,14 @@ def get_notifications(user_id: str):
 
 def create_prescription_approval(user_id: str, medicine: str, prescription_url: str, status: str = 'pending', extracted_data: str = None, doctor_name: str = 'Not Specified'):
     conn = get_db_connection()
-    conn.execute('INSERT INTO prescription_approvals (user_id, medicine, prescription_url, status, extracted_data, doctor_name) VALUES (?, ?, ?, ?, ?, ?)', 
+    conn.execute('INSERT INTO prescription_approvals (user_id, medicine, prescription_url, status, extracted_data, doctor_name) VALUES (?, ?, ?, ?, ?, ?)',
                  (user_id, medicine, prescription_url, status, extracted_data, doctor_name))
     conn.commit()
     conn.close()
 
-def get_pending_approvals():
+def get_all_approvals():
     conn = get_db_connection()
-    approvals = conn.execute("SELECT * FROM prescription_approvals WHERE status = 'pending' ORDER BY timestamp ASC").fetchall()
+    approvals = conn.execute("SELECT * FROM prescription_approvals ORDER BY timestamp DESC").fetchall()
     conn.close()
     return [dict(row) for row in approvals]
 
@@ -598,3 +620,37 @@ def check_approved_prescription(user_id: str, medicine: str) -> bool:
     row = conn.execute("SELECT 1 FROM prescription_approvals WHERE user_id = ? AND medicine = ? AND status = 'approved' LIMIT 1", (user_id, medicine)).fetchone()
     conn.close()
     return row is not None
+
+# --- AUTHENTICATION HELPERS ---
+
+def create_customer(name: str, email: str, phone: str, password_hash: str, auth_provider: str = 'local') -> str:
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # Generate sequential PATxxx ID
+    c.execute("SELECT user_id FROM customers WHERE user_id LIKE 'PAT%' ORDER BY user_id DESC LIMIT 1")
+    last_user = c.fetchone()
+    if last_user:
+        try:
+            num = int(last_user['user_id'].replace('PAT', ''))
+            new_id = f"PAT{num+1:03d}"
+        except:
+            import uuid
+            new_id = f"PAT{str(uuid.uuid4())[:6].upper()}"
+    else:
+        new_id = "PAT001"
+        
+    c.execute('''
+        INSERT INTO customers (user_id, name, email, phone, password, auth_provider)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (new_id, name, email, phone, password_hash, auth_provider))
+    
+    conn.commit()
+    conn.close()
+    return new_id
+
+def get_customer_by_email(email: str):
+    conn = get_db_connection()
+    user = conn.execute("SELECT * FROM customers WHERE email = ?", (email,)).fetchone()
+    conn.close()
+    return dict(user) if user else None

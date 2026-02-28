@@ -52,38 +52,44 @@ const ChatInterface = ({ userId = "GUEST_WEB", sessionId = null, onSessionCreate
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
-    // Load history
+  const loadHistory = async () => {
     if (userId && userId !== "GUEST_WEB") {
       if (sessionId) {
-        axios.get(`http://localhost:8000/api/chat/history/${sessionId}`)
-          .then(res => {
-            const history = res.data.map(msg => {
-              let parsedTime = null;
-              if (msg.timestamp) {
-                const isoString = msg.timestamp.replace(' ', 'T') + 'Z';
-                parsedTime = new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-              }
-              return {
-                role: msg.role === 'assistant' ? 'assistant' : 'user',
-                content: msg.content,
-                type: 'text',
-                timestamp: parsedTime
-              };
-            });
-            if (history.length > 0) {
-              setMessages(history); 
-            } else {
-              setMessages([{ role: 'assistant', content: 'Hello! I am your AI Pharmacist. I can help you verify prescriptions, check stock, and place orders. How can I help you today?', type: 'text' }]);
+        try {
+          const res = await axios.get(`http://localhost:8000/api/chat/history/${sessionId}`);
+          const history = res.data.map(msg => {
+            let parsedTime = null;
+            if (msg.timestamp) {
+              const isoString = msg.timestamp.replace(' ', 'T') + 'Z';
+              parsedTime = new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             }
-          })
-          .catch(err => console.error("Failed to load history", err));
+            return {
+              role: msg.role === 'assistant' ? 'assistant' : 'user',
+              content: msg.content,
+              type: 'text',
+              timestamp: parsedTime
+            };
+          });
+          if (history.length > 0) {
+            setMessages(history);
+          } else {
+            setMessages([{ role: 'assistant', content: 'Hello! I am your AI Pharmacist. I can help you verify prescriptions, check stock, and place orders. How can I help you today?', type: 'text' }]);
+          }
+        } catch (err) {
+          console.error("Failed to load history", err);
+        }
       } else {
         // Reset for new chat
         setMessages([{ role: 'assistant', content: 'Hello! I am your AI Pharmacist. I can help you verify prescriptions, check stock, and place orders. How can I help you today?', type: 'text' }]);
       }
     }
     scrollToBottom();
+  };
+
+  useEffect(() => {
+    loadHistory();
+    const interval = setInterval(loadHistory, 3000);
+    return () => clearInterval(interval);
   }, [userId, sessionId]);
 
   useEffect(() => {
