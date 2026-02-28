@@ -26,7 +26,7 @@ function App() {
   }
 
   return (
-    <div className="h-screen w-full overflow-hidden bg-slate-50 font-sans text-slate-900 flex">
+    <div className="h-screen w-full overflow-hidden font-sans flex">
       <ClientDashboard user={user} onLogout={handleLogout} />
     </div>
   );

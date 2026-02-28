@@ -129,7 +129,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
-    
+    try:
+        c.execute("ALTER TABLE customers ADD COLUMN profile_pic_url TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
     
@@ -143,6 +147,18 @@ def get_orders_by_user(user_id: str):
     orders = conn.execute('SELECT * FROM orders WHERE user_id = ? ORDER BY timestamp DESC', (user_id,)).fetchall()
     conn.close()
     return [dict(row) for row in orders]
+
+def get_user_profile(user_id: str):
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM customers WHERE user_id = ?', (user_id,)).fetchone()
+    conn.close()
+    return dict(user) if user else None
+
+def update_user_profile_pic(user_id: str, image_url: str):
+    conn = get_db_connection()
+    conn.execute('UPDATE customers SET profile_pic_url = ? WHERE user_id = ?', (image_url, user_id))
+    conn.commit()
+    conn.close()
 
 def create_notification(user_id: str, message: str):
     conn = get_db_connection()
@@ -176,6 +192,12 @@ def delete_chat_session(session_id: str):
     conn = get_db_connection()
     conn.execute('DELETE FROM chat_sessions WHERE id = ?', (session_id,))
     conn.execute('DELETE FROM chat_history WHERE session_id = ?', (session_id,))
+    conn.commit()
+    conn.close()
+
+def update_chat_session_title(session_id: str, title: str):
+    conn = get_db_connection()
+    conn.execute('UPDATE chat_sessions SET title = ? WHERE id = ?', (title, session_id))
     conn.commit()
     conn.close()
 

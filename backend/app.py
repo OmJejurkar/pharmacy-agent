@@ -221,8 +221,12 @@ def agent_chat_process(request: ChatRequest):
     session_id = request.session_id
     
     # Auto-create session if none provided
+    is_new_session = False
     if not session_id:
-        session_id = database.create_chat_session(user_id, "New Consultation")
+        title = text[:30] + "..." if len(text) > 30 else text
+        if not title: title = "New Consultation"
+        session_id = database.create_chat_session(user_id, title)
+        is_new_session = True
     
     # 0. Save User Message
     database.save_chat_message(user_id, "user", text, session_id)
@@ -403,6 +407,14 @@ def create_session(req: SessionCreate):
     session_id = database.create_chat_session(req.user_id, req.title)
     return {"session_id": session_id}
 
+class SessionUpdate(BaseModel):
+    title: str
+
+@app.put("/api/chat/sessions/{session_id}")
+def update_session(session_id: str, req: SessionUpdate):
+    database.update_chat_session_title(session_id, req.title)
+    return {"status": "updated"}
+
 @app.get("/api/chat/sessions/{user_id}")
 def get_user_sessions(user_id: str):
     return database.get_chat_sessions(user_id)
@@ -415,7 +427,41 @@ def delete_session(session_id: str):
 @app.get("/api/chat/history/{session_id}")
 def get_history_by_session(session_id: str):
     return database.get_chat_history_by_session(session_id)
+@app.get("/api/users/{user_id}")
+def get_user(user_id: str):
+    if user_id.lower() == "admin":
+        return {
+            "user_id": "admin",
+            "name": "System Administrator",
+            "email": "admin@medassist.ai",
+            "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Admin&backgroundColor=0061FF"
+        }
+    
+    profile = database.get_user_profile(user_id)
+    if not profile:
+        profile = {"user_id": user_id, "name": f"Patient {user_id}", "email": f"{user_id}@example.com"}
+        
+    if profile.get("profile_pic_url"):
+        profile["avatar"] = f"http://localhost:8000/{profile['profile_pic_url']}"
+    else:
+        name = profile.get("name", f"Patient {user_id}")
+        profile["avatar"] = f"https://api.dicebear.com/7.x/avataaars/svg?seed={name}&backgroundColor=e2e8f0"
+    
+    return profile
 
+@app.post("/api/users/{user_id}/avatar")
+async def upload_avatar(user_id: str, file: UploadFile = File(...)):
+    ext = file.filename.split(".")[-1]
+    filename = f"{user_id}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    
+    with open(filepath, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    static_url = f"static/uploads/{filename}"
+    database.update_user_profile_pic(user_id, static_url)
+    
+    return {"status": "success", "avatar_url": f"http://localhost:8000/{static_url}"}
 @app.get("/cart/{user_id}")
 def get_user_cart(user_id: str):
     return database.get_cart(user_id)

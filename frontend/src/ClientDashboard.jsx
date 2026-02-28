@@ -362,13 +362,17 @@ const ClientDashboard = ({ user, onLogout }) => {
       )}
 
       {/* --- COLUMN 3: Main Workspace (Flexible Width) --- */}
-      <div className="flex-1 flex flex-col relative bg-[#F8F9FB] h-screen overflow-hidden pt-14 md:pt-0">
-        
-        {/* Toggle History Sidebar Button (if closed) */}
-        {activeTab === 'chat' && !isHistoryOpen && (
+      <div className={`flex-1 flex flex-col min-w-0 transition-transform duration-300 ${isMobileMenuOpen ? "translate-x-64" : "translate-x-0"} relative z-10 bg-[#F8F9FB] dark:bg-slate-900`}>
+        {/* Mobile overlay */}
+        {isMobileMenuOpen && (
+          <div className="absolute inset-0 bg-black/50 z-20 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
+        )}
+
+        {/* Global Hamburger Menu (Visible on lg when history is closed AND activeTab is chat) */}
+        {!isHistoryOpen && activeTab === 'chat' && (
            <button 
              onClick={() => setIsHistoryOpen(true)} 
-             className="hidden lg:flex absolute top-4 left-4 z-20 p-2 bg-white border border-slate-200 text-slate-500 hover:text-blue-600 rounded-lg shadow-sm"
+             className="hidden lg:flex absolute top-4 left-4 z-20 p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg shadow-sm transition-colors"
            >
              <Menu size={20} />
            </button>

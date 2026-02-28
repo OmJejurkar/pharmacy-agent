@@ -2,9 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #f8fafc;
-  color: #1e293b;
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100;
+  }
 }
 
 /* Custom scrollbar */
@@ -12,12 +13,11 @@ body {
   width: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9; 
+  @apply bg-slate-100 dark:bg-slate-900;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1; 
-  border-radius: 4px;
+  @apply bg-slate-300 dark:bg-slate-700 rounded-md;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8; 
+  @apply bg-slate-400 dark:bg-slate-600;
 }
