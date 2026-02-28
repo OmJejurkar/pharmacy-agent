@@ -276,16 +276,26 @@ def agent_chat_process(request: ChatRequest):
             "status": "pending_confirmation"
         }
 
-    # --- NORMAL ORDER FLOW ---
     # 1. Extract Order
     extraction = agents.extractor.run(text, user_id=user_id)
     llm_answer = extraction.get("answer", "I understood your request.")
 
     if not extraction["medicines"]:
-        if extraction.get("error") == "gemini_rate_limit":
-             resp = "Ah! I'm sorry, but my AI NLP Service has hit its Free API Rate Limit with Google Gemini. Please try again in an hour!"
+        if extraction.get("error") == "groq_rate_limit":
+             resp = "Ah! I'm sorry, but my AI NLP Service has hit its Free API Rate Limit with Groq APIs. Please try again in an hour!"
              database.save_chat_message(user_id, "assistant", resp)
              return {"result": resp}
+             
+        # Check if the AI identified an item the user wants to buy but needs quantity confirmation
+        if extraction.get("pending_item_name"):
+             item_name = extraction["pending_item_name"]
+             resp = llm_answer # Should be "How much X do you need?"
+             database.save_chat_message(user_id, "assistant", resp)
+             return {
+                 "result": resp, 
+                 "status": "pending_quantity", 
+                 "data": {"item_name": item_name}
+             }
              
         # Check for suggestions if it seems they wanted an item
         suggestions = extraction.get("suggestions", [])

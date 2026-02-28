@@ -23,6 +23,11 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
   const [rxVerified, setRxVerified] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState([]);
+  
+  // Pending Quantity Widget State
+  const [pendingDigit, setPendingDigit] = useState(1);
+  const [pendingUnit, setPendingUnit] = useState(10); // Default to Strip
+  
   const messagesEndRef = useRef(null);
 
   const fetchCart = async () => {
@@ -291,6 +296,68 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Estimated Total</span>
                         <span className="text-lg font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-indigo-600">₹{msg.metadata.total_price.toFixed(2)}</span>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Dose/Quantity Selector Widget */}
+                  {msg.status === 'pending_quantity' && msg.metadata && msg.metadata.item_name && idx === messages.length - 1 && (
+                    <div className="mt-4 p-5 bg-white rounded-xl border-2 border-slate-200/80 shadow-md w-full min-w-[300px] animate-in slide-in-from-bottom-2">
+                      <p className="font-bold text-slate-800 mb-1 flex items-center justify-between text-sm">
+                        <span>Select Quantity</span>
+                        <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md text-xs truncate max-w-[150px] title={msg.metadata.item_name}">
+                          {msg.metadata.item_name}
+                        </span>
+                      </p>
+                      
+                      <div className="mt-4 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <div className="flex gap-2 mb-3">
+                          <button 
+                            onClick={() => setPendingUnit(1)} 
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${pendingUnit === 1 ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
+                          >
+                            Tablet (x1)
+                          </button>
+                          <button 
+                            onClick={() => setPendingUnit(10)} 
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${pendingUnit === 10 ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
+                          >
+                            Strip (x10)
+                          </button>
+                          <button 
+                            onClick={() => setPendingUnit(100)} 
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${pendingUnit === 100 ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
+                          >
+                            Box (x100)
+                          </button>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                           <div className="relative">
+                              <input 
+                                type="number" 
+                                min="1" 
+                                max="50"
+                                value={pendingDigit}
+                                onChange={(e) => setPendingDigit(Math.max(1, parseInt(e.target.value) || 1))}
+                                className="w-[80px] bg-white border-2 border-slate-200 text-slate-800 font-bold text-center py-2 rounded-lg outline-none focus:border-blue-500 transition-colors"
+                              />
+                           </div>
+                           <div className="flex-1 text-center bg-slate-200/50 rounded-lg py-2">
+                              <span className="text-xs font-bold text-slate-500 block">Total Units</span>
+                              <span className="text-lg font-black text-slate-800">{pendingDigit * pendingUnit}</span>
+                           </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                           const totalQty = pendingDigit * pendingUnit;
+                           handleSendMessage(`Please add ${totalQty} of ${msg.metadata.item_name} to my cart.`);
+                        }}
+                        className="mt-3 w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/20 active:scale-[0.98] flex items-center justify-center gap-1.5"
+                      >
+                        <ShoppingCart size={16} /> Add to Cart
+                      </button>
                     </div>
                   )}
 
