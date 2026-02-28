@@ -1,11 +1,9 @@
 import React from 'react';
 
-// Layout Components
 import Sidebar from './components/layout/Sidebar';
 import Topbar from './components/layout/Topbar';
 import { RefreshCw } from 'lucide-react';
 
-// Dashboard Components
 import DashboardSummary from './components/dashboard/DashboardSummary';
 import SalesChart from './components/dashboard/SalesChart';
 import InventoryCharts from './components/dashboard/InventoryCharts';
@@ -13,7 +11,6 @@ import InventoryTable from './components/dashboard/InventoryTable';
 import RefillPanel from './components/dashboard/RefillPanel';
 import ObservabilityPanel from './components/dashboard/ObservabilityPanel';
 
-// Full Page Views (Mockups for Navigation)
 import InventoryView from './components/dashboard/InventoryView';
 import PrescriptionsView from './components/dashboard/PrescriptionsView';
 import PatientsView from './components/dashboard/PatientsView';
