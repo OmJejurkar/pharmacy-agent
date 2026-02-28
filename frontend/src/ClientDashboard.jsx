@@ -158,26 +158,6 @@ const ClientDashboard = ({ user, onLogout }) => {
      setActiveDropdown(null);
   };
 
-  const handleAvatarUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    try {
-      await axios.post(`http://localhost:8000/api/users/${user.id}/avatar`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      fetchUserProfile();
-    } catch (err) {
-      console.error("Avatar upload failed", err);
-      alert("Failed to upload avatar");
-    }
-  };
-
   return (
     <div className={`flex h-screen w-full transition-colors duration-300 overflow-hidden font-sans ${isDarkMode ? 'dark text-slate-100 bg-slate-900' : 'text-slate-800 bg-[#F8F9FB]'}`}>
       
@@ -396,16 +376,11 @@ const ClientDashboard = ({ user, onLogout }) => {
         {activeTab === 'profile' && userProfile && (
            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200/60 dark:border-slate-800 overflow-hidden animate-in slide-in-from-bottom-4 duration-500 fade-in">
              <div className="p-8 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-slate-800 dark:to-slate-800 flex flex-col md:flex-row items-center md:items-start gap-6">
-                <div className="w-24 h-24 rounded-full bg-white dark:bg-slate-700 border-4 border-white dark:border-slate-800 shadow-lg overflow-hidden flex-shrink-0 relative group">
+                <div className="w-24 h-24 rounded-full bg-slate-100 dark:bg-slate-700 border-4 border-white dark:border-slate-800 shadow-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
                     {userProfile.avatar && !userProfile.avatar.includes('http://localhost:8000/static') ? 
-                        <img src={userProfile.avatar} alt="Profile Avatar" className="w-full h-full object-cover bg-slate-100" /> : 
-                        (userProfile.avatar ? <img src={userProfile.avatar} alt="Profile Avatar" className="w-full h-full object-cover" /> : <User size={40} className="m-auto text-slate-400 h-full"/>)
+                        <img src={userProfile.avatar} alt="Profile Avatar" className="w-full h-full object-cover" /> : 
+                        <User size={40} className="text-slate-400"/>
                     }
-                    <label className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity cursor-pointer text-xs font-bold gap-1 pb-1">
-                        <Camera size={20} />
-                        <span className="hidden group-hover:block">Upload</span>
-                        <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-                    </label>
                 </div>
                 <div className="flex-1 text-center md:text-left">
                     <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100">{userProfile.name}</h2>
