@@ -261,11 +261,13 @@ def load_excel_data():
                     c.execute('UPDATE medicines SET prescription_required = 1 WHERE name = ?', (med_name,))
                 
                 if user_id not in customers_map:
+                    # Assign emails dynamically during DB load so they are never overwritten
+                    assigned_email = "jejurkarom@gmail.com" if user_id == "PAT001" else f"random_{user_id}@example.com"
                     customers_map[user_id] = {
                         "user_id": user_id,
                         "name": f"Patient {user_id}", # File doesn't have names, use ID
                         "phone": "",
-                        "email": "",
+                        "email": assigned_email,
                         "medicine": med_name, # Last one?
                         "dosage_frequency": dosage,
                         "last_purchase_date": timestamp_str,
@@ -316,6 +318,17 @@ def get_all_medicines():
     medicines = conn.execute('SELECT * FROM medicines').fetchall()
     conn.close()
     return [dict(row) for row in medicines]
+
+def get_medicine_catalog():
+    """Returns essential details formatted string for LLM context."""
+    conn = get_db_connection()
+    medicines = conn.execute('SELECT name, unit_price, stock, prescription_required FROM medicines').fetchall()
+    conn.close()
+    catalog = []
+    for m in medicines:
+        rx = "Yes" if m['prescription_required'] else "No"
+        catalog.append(f"Name: {m['name']} | Price: ₹{m['unit_price']:.2f} | Stock: {m['stock']} | Rx Req: {rx}")
+    return "\n".join(catalog)
 
 def get_dashboard_summary():
     conn = get_db_connection()

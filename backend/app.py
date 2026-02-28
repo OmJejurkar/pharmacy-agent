@@ -278,26 +278,23 @@ def agent_chat_process(request: ChatRequest):
 
     # --- NORMAL ORDER FLOW ---
     # 1. Extract Order
-    # 1. Extract Order
     extraction = agents.extractor.run(text, user_id=user_id)
+    llm_answer = extraction.get("answer", "I understood your request.")
+
     if not extraction["medicines"]:
         if extraction.get("error") == "gemini_rate_limit":
              resp = "Ah! I'm sorry, but my AI NLP Service has hit its Free API Rate Limit with Google Gemini. Please try again in an hour!"
              database.save_chat_message(user_id, "assistant", resp)
              return {"result": resp}
              
-        # Check for suggestions
+        # Check for suggestions if it seems they wanted an item
         suggestions = extraction.get("suggestions", [])
-        if suggestions:
+        if suggestions and "price" not in text.lower():
             sugg_str = ", ".join(suggestions[:3]) # Show top 3
             resp = f"I couldn't find that exact medicine. Did you mean: {sugg_str}?"
         else:
-            # Check for Chitchat
-            chitchat_resp = agents.chitchat.run(text)
-            if chitchat_resp:
-                resp = chitchat_resp
-            else:
-                resp = "I couldn't identify a medicine. Please specify the name and quantity."
+            # Use the intelligent LLM answer! (Prices, Q&A, greetings)
+            resp = llm_answer
             
         database.save_chat_message(user_id, "assistant", resp)
         return {"result": resp}
@@ -307,11 +304,11 @@ def agent_chat_process(request: ChatRequest):
     safety_result = agents.safety.run(extraction, user_id=user_id)
     
     if not safety_result["approved"]:
-        resp = f"I cannot add this to your cart. {safety_result['reason']}"
+        resp = f"{llm_answer}\nHowever, I cannot add this: {safety_result['reason']}"
         database.save_chat_message(user_id, "assistant", resp)
         return {"result": resp, "status": safety_result.get("status", "rejected")}
     
-    # 3. Add to Cart
+    # 3. Add Multiple Items to Cart
     conn = database.get_db_connection()
     added_names = []
     
@@ -327,12 +324,12 @@ def agent_chat_process(request: ChatRequest):
         
     conn.close()
     
-    med_summary = ", ".join(added_names)
-    resp = f"Added {med_summary} to your cart."
+    # We use the LLM's natural conversational response
+    resp = llm_answer
+    
     database.save_chat_message(user_id, "assistant", resp)
     langfuse_client.flush()
     
-    # Just return text, UI cart will stay updated if we add endpoints
     return {
         "result": resp,
         "status": "cart_added"
