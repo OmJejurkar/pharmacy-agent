@@ -54,6 +54,7 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
 
   const loadHistory = async () => {
     if (userId && userId !== "GUEST_WEB") {
+<<<<<<< HEAD
       try {
         const res = await axios.get(`http://localhost:8000/chat/history/${userId}`);
         const history = res.data.map(msg => ({
@@ -73,6 +74,31 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
       } catch (err) {
         console.error("Failed to load history", err);
       }
+=======
+      axios.get(`http://localhost:8000/chat/history/${userId}`)
+        .then(res => {
+          const history = res.data.map(msg => {
+            let parsedTime = null;
+            if (msg.timestamp) {
+              // SQLite returns 'YYYY-MM-DD HH:MM:SS' in UTC.
+              // Convert to ISO 8601 UTC by replacing space with 'T' and appending 'Z'
+              const isoString = msg.timestamp.replace(' ', 'T') + 'Z';
+              parsedTime = new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+            return {
+              role: msg.role === 'assistant' ? 'assistant' : 'user',
+              content: msg.content,
+              type: 'text',
+              timestamp: parsedTime
+            };
+          });
+          if (history.length > 0) {
+            setMessages(prev => [prev[0], ...history]); // Keep greeting? Or replace? 
+            // Let's keep greeting at top, then history.
+          }
+        })
+        .catch(err => console.error("Failed to load history", err));
+>>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
     }
   };
 
@@ -91,7 +117,8 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
     if (!text.trim()) return;
 
     // Add user message
-    const newMessages = [...messages, { role: 'user', content: text, type: 'text' }];
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newMessages = [...messages, { role: 'user', content: text, type: 'text', timestamp: now }];
     setMessages(newMessages);
     setInput('');
     setIsLoading(true);
@@ -110,12 +137,14 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
       else if (result.status === 'pending_admin' || result.status === 'needs_prescription') messageType = 'warning';
 
       // Add agent response
+      const responseTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: result.result,
         type: messageType,
         status: result.status,
-        metadata: result.data
+        metadata: result.data,
+        timestamp: responseTime
       }]);
 
       // Voice Output
@@ -139,10 +168,15 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
     formData.append('user_id', userId);
 
     try {
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const previewUrl = URL.createObjectURL(file);
+
       setMessages(prev => [...prev, {
         role: 'user',
         content: `Uploading prescription: ${file.name}...`,
-        type: 'text'
+        type: 'image',
+        imageUrl: previewUrl,
+        timestamp: now
       }]);
 
       const response = await axios.post('http://localhost:8000/agent/upload_prescription', formData, {
@@ -154,10 +188,12 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
       const result = response.data;
       setRxVerified(true);
 
+      const responseTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: result.result,
         type: 'success',
+        timestamp: responseTime
       }]);
 
       // Also refresh cart if needed
@@ -245,6 +281,11 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
                     : "bg-[#F1F5F9] border border-[#E2E8F0] text-slate-800 rounded-2xl rounded-tl-sm"
                 )}>
                   <div className="flex flex-col gap-1">
+                    {msg.type === 'image' && msg.imageUrl && (
+                      <div className="mb-2 w-48 h-48 md:w-64 md:h-64 rounded-xl overflow-hidden shadow-sm border border-slate-200">
+                        <img src={msg.imageUrl} alt="Uploaded Prescription" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500 cursor-pointer" onClick={() => window.open(msg.imageUrl, '_blank')} />
+                      </div>
+                    )}
                     <span className={cn(
                       msg.type === 'warning' ? 'text-orange-800' : '',
                       msg.type === 'error' ? 'text-red-800' : ''
@@ -388,9 +429,9 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
                     </div>
                   )}
                 </div>
-                {/* Timestamp placeholder */}
-                <span className="text-[10px] text-slate-400 mt-1.5 px-1 font-medium">
-                  {msg.role === 'user' ? 'Read' : 'Just now'}
+                {/* Timestamp */}
+                <span className="text-[10px] text-slate-400 mt-1.5 px-1 font-medium flex items-center gap-1">
+                  {msg.timestamp ? msg.timestamp : (msg.role === 'user' ? 'Read' : 'Just now')}
                 </span>
               </div>
             ))}

@@ -135,6 +135,21 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        c.execute("ALTER TABLE prescription_approvals ADD COLUMN extracted_data TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute("ALTER TABLE prescription_approvals ADD COLUMN doctor_name TEXT DEFAULT 'Not Specified'")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute("ALTER TABLE prescription_approvals ADD COLUMN rejection_reason TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     
     conn.commit()
     conn.close()
@@ -510,9 +525,16 @@ def get_notifications(user_id: str):
     conn.close()
     return [dict(row) for row in notifs]
 
+<<<<<<< HEAD
 def create_prescription_approval(user_id: str, medicine: str, prescription_url: str, status: str = 'pending', extracted_items: str = None, doctor_name: str = None):
     conn = get_db_connection()
     conn.execute('INSERT INTO prescription_approvals (user_id, medicine, prescription_url, status, extracted_items, doctor_name) VALUES (?, ?, ?, ?, ?, ?)', (user_id, medicine, prescription_url, status, extracted_items, doctor_name))
+=======
+def create_prescription_approval(user_id: str, medicine: str, prescription_url: str, status: str = 'pending', extracted_data: str = None, doctor_name: str = 'Not Specified'):
+    conn = get_db_connection()
+    conn.execute('INSERT INTO prescription_approvals (user_id, medicine, prescription_url, status, extracted_data, doctor_name) VALUES (?, ?, ?, ?, ?, ?)', 
+                 (user_id, medicine, prescription_url, status, extracted_data, doctor_name))
+>>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
     conn.commit()
     conn.close()
 
@@ -522,9 +544,15 @@ def get_all_approvals():
     conn.close()
     return [dict(row) for row in approvals]
 
-def update_approval_status(approval_id: int, status: str):
+def get_all_prescriptions():
     conn = get_db_connection()
-    conn.execute('UPDATE prescription_approvals SET status = ? WHERE id = ?', (status, approval_id))
+    prescs = conn.execute("SELECT * FROM prescription_approvals ORDER BY timestamp DESC").fetchall()
+    conn.close()
+    return [dict(row) for row in prescs]
+
+def update_approval_status(approval_id: int, status: str, rejection_reason: str = None):
+    conn = get_db_connection()
+    conn.execute('UPDATE prescription_approvals SET status = ?, rejection_reason = ? WHERE id = ?', (status, rejection_reason, approval_id))
     conn.commit()
     conn.close()
 

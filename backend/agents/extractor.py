@@ -43,7 +43,7 @@ def get_medicine_catalog_data() -> str:
 
 class OrderExtractorAgent:
     def __init__(self):
-        self._medicine_names: Optional[List[str]] = None
+        self._medicine_names: Optional[str] = None
         self.client = client
         # Llama 3.3 70B is incredible for conversational parsing
         self.model_name = 'llama-3.3-70b-versatile'
@@ -67,11 +67,13 @@ class OrderExtractorAgent:
         prompt = f"""
         You are 'MedAssist AI', an intelligent and highly capable conversational pharmacy assistant.
         Your task is to parse a user's conversational text, ANSWER any questions they have based on our inventory catalog, AND handle their purchase intents.
-        
+        The user might type in messy, unprofessional language (e.g., "i got a bad headache give me 2 packs of aspirins"), use slang, Hinglish (e.g., "bhai ek paracetamol dena", "dawae dedo"), abbreviations, phonetic spellings, or have severe typos.
+
         CRITICAL INSTRUCTIONS FOR ORDER FLOW:
         1. Read the user's text. If they are asking a question (e.g. "What's the price of X?"), use the Current Inventory catalog to answer them warmly in the 'answer' field.
         2. UI WIDGET TRIGGER: If the user expresses intent to buy an item BUT DOES NOT specify an exact quantity/number (e.g. "I want Paracetamol"), you MUST NOT add it to the 'medicines' array. Instead, extract the intended inventory name into the 'pending_item_name' field so the frontend can display the Dose UI.
         3. EXPLICIT CART ADDITION: If the user EXPLICITLY provides a quantity AND a medicine name (e.g. "Please add 20 of Paracetamol to my cart" or "I want 5 Advil"), you MUST extract it directly into the 'medicines' array and SET 'pending_item_name' to null. Do not use pending_item_name if a number/quantity is present!
+        4. Handle plurals, typos, slangs, Hinglish, and mixed languages gracefully (e.g., "aspirins" -> "Aspirin", "para" -> "Paracetamol", "advils" -> "Advil", "dawae" -> medicine context). Map to exact inventory item names.
         4. If it's completely unclear or not in inventory, provide the closest match in 'suggestions'.
         
         Our Current Inventory (Name | Price | Stock | Rx Required): 
@@ -158,21 +160,33 @@ def extract_prescription_file(file_bytes: bytes, mime_type: str = "image/jpeg") 
         
     prompt = f"""
     You are an intelligent pharmacy extraction engine.
+<<<<<<< HEAD
     Your task is to parse a doctor's handwritten prescription or medical document and identify ALL medical items, dosages, and quantities.
+=======
+    Your task is to parse a doctor's handwritten prescription image and identify ALL medical items, dosages, and quantities, AS WELL AS the prescribing doctor's name.
+>>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
     
     CRITICAL INSTRUCTIONS:
     1. Read the document carefully to identify the medicine name and dosage (e.g. Paracetamol 500mg).
     2. Try your best to extract every medicine mentioned.
     3. You must map what you read to the closest exact match from our Current Inventory list below. 
     4. Handle plurals, typos, and bad handwriting gracefully.
+<<<<<<< HEAD
     5. IDENTIFY THE PRESCRIBING DOCTOR. Look for names at the top or near signatures (e.g., "Dr. Smith", "Sarah Jenkins MD"). If no distinct doctor is found, return null.
+=======
+    5. Find the prescribing doctor's name (look for 'Dr.', signatures, headers).
+>>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
     
     Current Inventory:
     {meds}
     
-    Return ONLY a raw JSON object with the following exact schema (no markdown formatting):
+    Return ONLY a raw JSON object with the exact keys below:
     {{
+<<<<<<< HEAD
         "doctor_name": "Extracted Doctor Name or null",
+=======
+        "doctor_name": "Full name of the doctor, or 'Not specified'",
+>>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
         "medicines": [
             {{
                 "name": "Exact Name From Inventory String",
@@ -243,15 +257,42 @@ def extract_prescription_file(file_bytes: bytes, mime_type: str = "image/jpeg") 
         elif "```" in raw_text:
             raw_text = raw_text.split("```")[1].split("```")[0]
             
+        print("--- OCR RAW TEXT ---")
+        print(raw_text)
+        print("---------------------------")
         extracted_data = json.loads(raw_text.strip())
+        
+        # Sometimes models use title case for keys, let's parse safely
+        doc_name = extracted_data.get("doctor_name") or extracted_data.get("DoctorName") or extracted_data.get("Doctor_Name") or "Unknown Doctor"
+        
         result = {
+<<<<<<< HEAD
             "doctor_name": extracted_data.get("doctor_name", None),
+=======
+            "doctor_name": doc_name,
+>>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
             "medicines": extracted_data.get("medicines", []),
             "suggestions": extracted_data.get("suggestions", [])
         }
+        if trace:
+             trace.update(output=result)
+             trace.end()
+        return result
+        
     except Exception as e:
+<<<<<<< HEAD
         print(f"Groq Parsing Failed: {e}")
         result = {"doctor_name": None, "medicines": [], "suggestions": [], "error": str(e)}
+=======
+        print(f"Image Extraction Failed: {e}")
+        # Always return a valid struct so backend doesn't crash on tuple unpacking
+        result = {
+            "doctor_name": "Unknown Doctor",
+            "medicines": [],
+            "suggestions": [],
+            "error": str(e)
+        }
+>>>>>>> 6df99fa3365a3833c9b8dfbc55a548564d60b612
 
     if trace:
         trace.update(output=result)
