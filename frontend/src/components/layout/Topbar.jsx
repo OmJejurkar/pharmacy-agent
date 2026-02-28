@@ -16,13 +16,14 @@ export default function Topbar() {
   const fetchApprovals = async () => {
     try {
       const res = await axios.get('http://localhost:8000/api/approvals');
-      // Map backend approvals to frontend format
-      const approvals = res.data.map(app => ({
-        id: app.id,
-        user: app.user_id,
-        medicine: app.medicine,
-        hasScript: !!app.prescription_url
-      }));
+      const approvals = res.data
+        .filter(app => app.status === 'pending' || app.status === 'uploaded')
+        .map(app => ({
+          id: app.id,
+          user: app.user_id,
+          medicine: app.medicine,
+          hasScript: !!app.prescription_url
+        }));
       setNotifications(approvals);
     } catch (err) {
       console.error("Failed to fetch approvals:", err);

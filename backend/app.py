@@ -10,7 +10,22 @@ import models
 import database
 import langfuse_client
 import httpx
+import bcrypt
+import json
 from agents import extractor, safety, executor, proactive, chitchat
+import sarvam_service
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
+    password: str
+    auth_provider: Optional[str] = "local"
+    
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
 
 app = FastAPI(title="Pharmacy Agent Backend")
 
@@ -78,6 +93,41 @@ def get_live_dashboard_summary():
         "today_revenue": round(total_revenue, 2), # UI fallback
         "monthly_profit": round(total_profit, 2)  # Update UI to use all-time profit
     }
+
+# --- AUTHENTICATION ---
+
+@app.post("/auth/register")
+def register_user(req: RegisterRequest):
+    existing = database.get_customer_by_email(req.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+        
+    hashed_pwd = bcrypt.hashpw(req.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8') if req.password else ""
+    user_id = database.create_customer(req.name, req.email, req.phone, hashed_pwd, req.auth_provider)
+    return {"status": "success", "user_id": user_id, "role": "client"}
+
+@app.post("/auth/login")
+def login_user(req: LoginRequest):
+    user = database.get_customer_by_email(req.email)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    # Check if they are logging in via the Google Mock
+    if user.get("auth_provider") == "google" and req.password == "google_auth_mock":
+        return {"status": "success", "user_id": user["user_id"], "role": "client"}
+        
+    if not user.get("password") or not req.password:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    try:
+        is_valid = bcrypt.checkpw(req.password.encode('utf-8'), user["password"].encode('utf-8'))
+    except ValueError:
+        is_valid = False
+        
+    if not is_valid:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    return {"status": "success", "user_id": user["user_id"], "role": "client"}
 
 @app.get("/medicines")
 def get_medicines():
@@ -154,10 +204,12 @@ async def upload_prescription(user_id: str = Form(...), file: UploadFile = File(
         file_bytes = f.read()
         
     mime_type = file.content_type or "image/jpeg"
-    extraction = agents.extract_from_image(file_bytes, mime_type)
+    extraction = agents.extract_prescription_file(file_bytes, mime_type)
     
     added_meds = []
     unrecognized = []
+    extracted_meds_data = [] # New: To store JSON data securely without adding to cart yet
+    
     conn = database.get_db_connection()
     for med in extraction.get("medicines", []):
         name = med["name"]
@@ -172,8 +224,12 @@ async def upload_prescription(user_id: str = Form(...), file: UploadFile = File(
         if r:
             exact_name = r['name']
             price = r['unit_price'] * qty
-            # Add to cart as prescribed
-            database.add_to_cart(user_id, exact_name, qty, price, is_prescribed=True)
+            # Do NOT add to cart yet. Store for admin approval.
+            extracted_meds_data.append({
+                "name": exact_name,
+                "qty": qty,
+                "price": price
+            })
             added_meds.append(f"{qty}x {exact_name}")
         else:
             unrecognized.append(name)
@@ -191,13 +247,27 @@ async def upload_prescription(user_id: str = Form(...), file: UploadFile = File(
         
     final_summary = " ".join(med_summary_parts) if med_summary_parts else "No medications recognized."
     
-    # Send it to admin as 'uploaded'
-    database.create_prescription_approval(user_id, final_summary, file_url, status="uploaded")
+    # Send it to admin as 'pending', attaching the secure extracted JSON items
+    database.create_prescription_approval(
+        user_id, 
+        final_summary, 
+        file_url, 
+        status="pending", 
+        extracted_items=json.dumps(extracted_meds_data),
+        doctor_name=extraction.get("doctor_name")
+    )
     
     # Chat response
-    resp = f"Prescription uploaded successfully. Extracted and added {', '.join(added_meds) if added_meds else 'no recognized medicines'} to your cart as prescribed."
-    if unrecognized or extraction.get("suggestions"):
-        resp += " Some items were not found in our inventory."
+    error_msg = extraction.get("error")
+    if error_msg:
+        if "429" in str(error_msg) or "rate" in str(error_msg).lower() or "exhausted" in str(error_msg).lower() or "limit" in str(error_msg).lower():
+            resp = "Prescription uploaded successfully. ⚠️ Note: My AI vision engine is currently rate-limited by Groq. The document was sent to the Admin for manual review."
+        else:
+            resp = f"Prescription uploaded successfully. ⚠️ I encountered an AI parsing error: {str(error_msg)[:50]}. The document was sent to the Admin for manual review."
+    else:
+        resp = f"Prescription uploaded successfully. Found {', '.join(added_meds) if added_meds else 'no recognized medicines'} - sent to Admin for approval!"
+        if unrecognized or extraction.get("suggestions"):
+            resp += " Some items were not found in our inventory."
     
     database.save_chat_message(user_id, "assistant", resp)
     langfuse_client.flush()
@@ -216,15 +286,35 @@ class ChatRequest(BaseModel):
 @app.post("/agent/chat")
 def agent_chat_process(request: ChatRequest):
     user_id = request.user_id
-    text = request.text.strip()
+    raw_text = request.text.strip()
     
+    # --- TRANSLATION MIDDLEWARE: INBOUND ---
+    # Translate incoming text to English (en-IN)
+    # The Sarvam API will try to detect the source (e.g., 'hi-IN').
+    t_in = sarvam_service.translate_text(raw_text, source_lang="Unknown", target_lang="en-IN")
+    text = t_in.get("translated_text", raw_text)
+    detected_source_lang = t_in.get("detected_source", "en-IN")
+    
+    # Fallback to English if detector got confused or failed
+    if not detected_source_lang or detected_source_lang == "Unknown":
+        detected_source_lang = "en-IN"
+        
+    print(f"[LANG] Detected: {detected_source_lang} | Original: '{raw_text}' | English: '{text}'")
+
     # 0. Save User Message
-    database.save_chat_message(user_id, "user", text)
+    database.save_chat_message(user_id, "user", raw_text)
+
+    # Helper function to Translate Outbound
+    def format_outbound_response(english_resp: str):
+        if detected_source_lang != "en-IN":
+            t_out = sarvam_service.translate_text(english_resp, source_lang="en-IN", target_lang=detected_source_lang)
+            return t_out.get("translated_text", english_resp)
+        return english_resp
 
     # --- CONFIRMATION LOGIC ---
     # Check if user said "yes" or "confirm"
     if text.lower() in ["no", "cancel", "abort", "nevermind"]:
-        resp = "Order cancelled."
+        resp = format_outbound_response("Order cancelled.")
         database.save_chat_message(user_id, "assistant", resp)
         return {"result": resp}
 
@@ -232,7 +322,7 @@ def agent_chat_process(request: ChatRequest):
         # Retrieve cart from database
         cart_items = database.get_cart(user_id)
         if not cart_items:
-             resp = "Your cart is currently empty."
+             resp = format_outbound_response("Your cart is currently empty.")
              database.save_chat_message(user_id, "assistant", resp)
              return {"result": resp}
         
@@ -294,7 +384,8 @@ def agent_chat_process(request: ChatRequest):
             pending_str = ", ".join(pending_approval_meds)
             resp_parts.append(f"Medicines requiring a prescription ({pending_str}) have been sent to the admin for approval.")
             
-        resp = " ".join(resp_parts)
+        final_english_resp = " ".join(resp_parts)
+        resp = format_outbound_response(final_english_resp)
         database.clear_cart(user_id)
         database.save_chat_message(user_id, "assistant", resp)
         langfuse_client.flush()
@@ -306,7 +397,7 @@ def agent_chat_process(request: ChatRequest):
     if text.lower() in ["show cart", "view cart", "my cart", "show my cart", "cart"]:
         cart_items = database.get_cart(user_id)
         if not cart_items:
-            resp = "Your cart is empty."
+            resp = format_outbound_response("Your cart is empty.")
             database.save_chat_message(user_id, "assistant", resp)
             return {"result": resp}
             
@@ -314,7 +405,8 @@ def agent_chat_process(request: ChatRequest):
         total_est = sum(item['price'] for item in cart_items)
         med_summary = ", ".join([f"{m['qty']}x {m['name']}" for m in formatted_meds])
         
-        resp = f"You have {len(formatted_meds)} items in your cart. Total approx: ₹{total_est:.2f}. Do you want to confirm?"
+        eng_resp = f"You have {len(formatted_meds)} items in your cart. Total approx: ₹{total_est:.2f}. Do you want to confirm?"
+        resp = format_outbound_response(eng_resp)
         database.save_chat_message(user_id, "assistant", resp)
         langfuse_client.flush()
         return {
@@ -332,14 +424,14 @@ def agent_chat_process(request: ChatRequest):
 
     if not extraction["medicines"]:
         if extraction.get("error") == "groq_rate_limit":
-             resp = "Ah! I'm sorry, but my AI NLP Service has hit its Free API Rate Limit with Groq APIs. Please try again in an hour!"
+             resp = format_outbound_response("Ah! I'm sorry, but my AI NLP Service has hit its Free API Rate Limit with Groq APIs. Please try again in an hour!")
              database.save_chat_message(user_id, "assistant", resp)
              return {"result": resp}
              
         # Check if the AI identified an item the user wants to buy but needs quantity confirmation
         if extraction.get("pending_item_name"):
              item_name = extraction["pending_item_name"]
-             resp = llm_answer # Should be "How much X do you need?"
+             resp = format_outbound_response(llm_answer) # Should be "How much X do you need?"
              database.save_chat_message(user_id, "assistant", resp)
              return {
                  "result": resp, 
@@ -351,10 +443,11 @@ def agent_chat_process(request: ChatRequest):
         suggestions = extraction.get("suggestions", [])
         if suggestions and "price" not in text.lower():
             sugg_str = ", ".join(suggestions[:3]) # Show top 3
-            resp = f"I couldn't find that exact medicine. Did you mean: {sugg_str}?"
+            eng_resp = f"I couldn't find that exact medicine. Did you mean: {sugg_str}?"
+            resp = format_outbound_response(eng_resp)
         else:
             # Use the intelligent LLM answer! (Prices, Q&A, greetings)
-            resp = llm_answer
+            resp = format_outbound_response(llm_answer)
             
         database.save_chat_message(user_id, "assistant", resp)
         return {"result": resp}
@@ -364,7 +457,8 @@ def agent_chat_process(request: ChatRequest):
     safety_result = agents.safety.run(extraction, user_id=user_id)
     
     if not safety_result["approved"]:
-        resp = f"{llm_answer}\nHowever, I cannot add this: {safety_result['reason']}"
+        eng_resp = f"{llm_answer}\nHowever, I cannot add this: {safety_result['reason']}"
+        resp = format_outbound_response(eng_resp)
         database.save_chat_message(user_id, "assistant", resp)
         return {"result": resp, "status": safety_result.get("status", "rejected")}
     
@@ -385,7 +479,7 @@ def agent_chat_process(request: ChatRequest):
     conn.close()
     
     # We use the LLM's natural conversational response
-    resp = llm_answer
+    resp = format_outbound_response(llm_answer)
     
     database.save_chat_message(user_id, "assistant", resp)
     langfuse_client.flush()
@@ -460,7 +554,7 @@ def get_user_notifications(user_id: str):
 
 @app.get("/admin/approvals")
 def get_admin_approvals():
-    return database.get_pending_approvals()
+    return database.get_all_approvals()
 
 class ApprovalStatusUpdate(BaseModel):
     status: str # "approved" or "rejected"
@@ -482,26 +576,27 @@ def update_admin_approval(approval_id: int, update: ApprovalStatusUpdate):
     database.update_approval_status(approval_id, update.status)
     
     # Action upon approval/rejection
-    medicine = approval['medicine']
     if update.status == "approved":
-        # Simulate execution
-        approved_order = {
-            "medicines": [{"name": medicine, "qty": 1}] # Defaulting to 1 for this prototype
-        }
-        
-        execution = agents.executor.run(approved_order, user_id=approval['user_id'])
-        if execution["status"] == "success":
-            msg = f"Your prescription for {medicine} has been approved! Order Placed! Total: ₹{execution['total_price']}"
-            
-            # Update global financial state
-            add_to_financial_totals(execution['total_price'])
-            
-            database.save_chat_message(approval['user_id'], "assistant", msg)
-            langfuse_client.flush()
+        approval_dict = dict(approval)
+        extracted_data = approval_dict.get('extracted_items')
+        if not extracted_data:
+            msg = f"Your prescription was approved, but no valid medications were found to add to your cart."
         else:
-            msg = f"Your prescription for {medicine} was approved, but order failed: {execution.get('error')}"
+            try:
+                items = json.loads(extracted_data)
+                added_names = []
+                for item in items:
+                    database.add_to_cart(approval['user_id'], item['name'], item['qty'], item['price'], is_prescribed=True)
+                    added_names.append(item['name'])
+                msg = f"Your prescription has been approved! The following medications have been added to your cart: {', '.join(added_names)}."
+            except Exception as e:
+                print(f"Error parsing prescription items: {e}")
+                msg = f"Your prescription was approved, but an error occurred adding items to your cart."
+                
+        database.save_chat_message(approval['user_id'], "assistant", msg)
+        langfuse_client.flush()
     else:
-        msg = f"Your prescription for {medicine} was rejected. Please contact support."
+        msg = f"Your prescription was rejected. Please contact support."
     
     database.create_notification(approval['user_id'], msg)
     
@@ -539,7 +634,7 @@ def api_refill_predictions():
 
 @app.get("/api/approvals")
 def api_approvals():
-    return database.get_pending_approvals()
+    return database.get_all_approvals()
 
 @app.post("/api/approvals/{approval_id}")
 def api_update_approval(approval_id: int, update: ApprovalStatusUpdate):

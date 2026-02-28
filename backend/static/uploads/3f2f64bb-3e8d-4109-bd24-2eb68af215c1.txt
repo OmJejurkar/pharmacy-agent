@@ -1,0 +1,3 @@
+Patient: Alice
+Dr. AI
+Give 5 strips of Paracetamol.

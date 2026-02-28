@@ -1,0 +1,3 @@
+Patient: Charlie
+Dr. Smith
+Give 2 strips of Paracetamol.

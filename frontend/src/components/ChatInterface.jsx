@@ -52,24 +52,34 @@ const ChatInterface = ({ userId = "GUEST_WEB" }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
-    // Load history
+  const loadHistory = async () => {
     if (userId && userId !== "GUEST_WEB") {
-      axios.get(`http://localhost:8000/chat/history/${userId}`)
-        .then(res => {
-          const history = res.data.map(msg => ({
-            role: msg.role === 'assistant' ? 'assistant' : 'user',
-            content: msg.content,
-            type: 'text' // simplification
-          }));
-          if (history.length > 0) {
-            setMessages(prev => [prev[0], ...history]); // Keep greeting? Or replace? 
-            // Let's keep greeting at top, then history.
-          }
-        })
-        .catch(err => console.error("Failed to load history", err));
+      try {
+        const res = await axios.get(`http://localhost:8000/chat/history/${userId}`);
+        const history = res.data.map(msg => ({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content,
+          type: 'text' // simplification
+        }));
+        if (history.length > 0) {
+          setMessages(prev => {
+            // Prevent unnecessary re-renders if length is equal
+            if (prev.length - 1 !== history.length) {
+              return [prev[0], ...history];
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load history", err);
+      }
     }
-    scrollToBottom();
+  };
+
+  useEffect(() => {
+    loadHistory();
+    const interval = setInterval(loadHistory, 3000);
+    return () => clearInterval(interval);
   }, [userId]);
 
   useEffect(() => {

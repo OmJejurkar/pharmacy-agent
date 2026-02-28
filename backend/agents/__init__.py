@@ -1,4 +1,4 @@
-from .extractor import OrderExtractorAgent, extract_from_image
+from .extractor import OrderExtractorAgent, extract_prescription_file
 from .safety import SafetyCheckerAgent
 from .executor import InventoryExecutorAgent
 from .proactive import ProactiveRefillAgent

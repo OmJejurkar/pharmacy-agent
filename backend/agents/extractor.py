@@ -2,6 +2,8 @@ import os
 import re
 import json
 import base64
+import io
+import pypdf
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
 
@@ -146,8 +148,8 @@ class OrderExtractorAgent:
         return result
 
 
-def extract_from_image(file_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
-    trace = langfuse_client.trace_interaction("ImageExtractor", "prescription_image")
+def extract_prescription_file(file_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+    trace = langfuse_client.trace_interaction("FileExtractor", "prescription_file")
     
     try:
         meds = get_medicine_catalog_data()
@@ -156,19 +158,21 @@ def extract_from_image(file_bytes: bytes, mime_type: str = "image/jpeg") -> dict
         
     prompt = f"""
     You are an intelligent pharmacy extraction engine.
-    Your task is to parse a doctor's handwritten prescription image and identify ALL medical items, dosages, and quantities.
+    Your task is to parse a doctor's handwritten prescription or medical document and identify ALL medical items, dosages, and quantities.
     
     CRITICAL INSTRUCTIONS:
-    1. Read the doctor's handwriting carefully to identify the medicine name and dosage (e.g. Paracetamol 500mg).
+    1. Read the document carefully to identify the medicine name and dosage (e.g. Paracetamol 500mg).
     2. Try your best to extract every medicine mentioned.
     3. You must map what you read to the closest exact match from our Current Inventory list below. 
     4. Handle plurals, typos, and bad handwriting gracefully.
+    5. IDENTIFY THE PRESCRIBING DOCTOR. Look for names at the top or near signatures (e.g., "Dr. Smith", "Sarah Jenkins MD"). If no distinct doctor is found, return null.
     
     Current Inventory:
     {meds}
     
     Return ONLY a raw JSON object with the following exact schema (no markdown formatting):
     {{
+        "doctor_name": "Extracted Doctor Name or null",
         "medicines": [
             {{
                 "name": "Exact Name From Inventory String",
@@ -183,33 +187,57 @@ def extract_from_image(file_bytes: bytes, mime_type: str = "image/jpeg") -> dict
         return {"medicines": [], "suggestions": [], "error": "Groq client not initialized"}
 
     try:
-        # Groq uses base64 data URLs for vision processing
-        base64_image = base64.b64encode(file_bytes).decode('utf-8')
-        image_url = f"data:{mime_type};base64,{base64_image}"
+        if mime_type.startswith("image/"):
+            # Vision Logic
+            base64_image = base64.b64encode(file_bytes).decode('utf-8')
+            image_url = f"data:{mime_type};base64,{base64_image}"
 
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": image_url,
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_url,
+                                },
                             },
-                        },
-                    ],
-                }
-            ],
-            model="llama-3.2-11b-vision-preview",
-            temperature=0.1
-        )
-        
+                        ],
+                    }
+                ],
+                model="llama-3.2-11b-vision-preview",
+                temperature=0.1
+            )
+        else:
+            # Text/PDF Logic
+            extracted_text = ""
+            if mime_type == "application/pdf":
+                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                for page in reader.pages:
+                    extracted_text += page.extract_text() + "\n"
+            else:
+                # Fallback to pure text decoding for CSV/TXT
+                extracted_text = file_bytes.decode("utf-8", errors="ignore")
+                
+            text_prompt = prompt + f"\n\nHere is the scraped text from the document:\n{extracted_text}"
+            
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": text_prompt
+                    }
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            
         raw_text = chat_completion.choices[0].message.content.strip()
         
-        # Llama vision doesn't consistently support response_format json_object yet
-        # So we manually parse out the codeblock if it exists:
+        # Parse JSON robustly
         if "```json" in raw_text:
             raw_text = raw_text.split("```json")[1].split("```")[0]
         elif "```" in raw_text:
@@ -217,12 +245,13 @@ def extract_from_image(file_bytes: bytes, mime_type: str = "image/jpeg") -> dict
             
         extracted_data = json.loads(raw_text.strip())
         result = {
+            "doctor_name": extracted_data.get("doctor_name", None),
             "medicines": extracted_data.get("medicines", []),
             "suggestions": extracted_data.get("suggestions", [])
         }
     except Exception as e:
-        print(f"Groq Image Extraction Failed: {e}")
-        result = {"medicines": [], "suggestions": [], "error": str(e)}
+        print(f"Groq Parsing Failed: {e}")
+        result = {"doctor_name": None, "medicines": [], "suggestions": [], "error": str(e)}
 
     if trace:
         trace.update(output=result)
