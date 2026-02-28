@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import PrimarySidebar from '../layout/PrimarySidebar';
 import ChatSessionsSidebar from '../layout/ChatSessionsSidebar';
+import ChatInterface from '../chat/ChatInterface';
 
 const ClientDashboard = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -89,14 +90,24 @@ const ClientDashboard = () => {
         />
       )}
 
-      {/* 3. Main Workspace Placeholder */}
-      <div className="flex-1 h-full bg-[#F8F9FB] dark:bg-slate-900 flex flex-col transition-colors overflow-y-auto">
-        <div className="p-8">
-          <h1 className="text-2xl font-bold mb-4">Main Workspace</h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            This area will contain the ChatInterface, Orders, Cart, Alerts, or Profile depending on the active tab.
-          </p>
-        </div>
+      {/* 3. Main Workspace */}
+      <div className="flex-1 h-full bg-[#F8F9FB] dark:bg-slate-900 flex flex-col transition-colors overflow-hidden relative">
+        {activeTab === 'chat' ? (
+          <ChatInterface 
+            sessionId={activeSessionId} 
+            user={user} 
+            isDarkMode={isDarkMode} 
+          />
+        ) : (
+          <div className="p-8 overflow-y-auto h-full">
+            <h1 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white capitalize">
+              {activeTab.replace('-', ' ')}
+            </h1>
+            <p className="text-slate-600 dark:text-slate-400">
+              The {activeTab} view is currently under development.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
